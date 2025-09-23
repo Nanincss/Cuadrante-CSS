@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const registerBtn = document.getElementById('register-btn');
     const loginError = document.getElementById('login-error');
 
+    const userSelect = document.getElementById('user-select');
+    const manageUsersBtn = document.getElementById('manage-users-btn');
     const searchInput = document.getElementById('search-input');
     const clearSearchBtn = document.getElementById('clear-search-btn');
     const searchResultsCount = document.getElementById('search-results-count');
@@ -41,12 +43,20 @@ document.addEventListener('DOMContentLoaded', function() {
     const printTitle = document.getElementById('print-title');
     const globalSearchResultsContainer = document.getElementById('global-search-results-container');
     const globalSearchResults = document.getElementById('global-search-results');
+    // Modal de usuarios
+    const userModal = document.getElementById('user-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const userList = document.getElementById('user-list');
+    const addUserBtn = document.getElementById('add-user-btn');
+    const newUserNameInput = document.getElementById('new-user-name');
 
     // --- ESTADO DE LA APLICACIÓN ---
     let localUser = null; // El usuario que ha iniciado sesión
     let currentMonth = new Date().getMonth();
     let currentYear = new Date().getFullYear();
     let monthUnsubscribe = null; // Para dejar de escuchar cambios cuando cambiamos de mes
+    let users = []; // Lista de usuarios para el dropdown
+    let currentUser = ''; // Usuario seleccionado en el dropdown
 
     // --- FUNCIONES DE RENDERIZADO ---
     function renderCalendar(year, month, monthData) {
@@ -190,7 +200,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         const fileInfo = {
                             name: file.name,
                             downloadURL: downloadURL,
-                            uploadedBy: localUser.email,
+                            uploadedBy: currentUser, // Usar el usuario del dropdown
                             timestamp: firebase.firestore.FieldValue.serverTimestamp()
                         };
 
@@ -403,6 +413,61 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // --- FUNCIONES DE GESTIÓN DE USUARIOS (Firestore) ---
+    async function loadUsers() {
+        try {
+            const doc = await db.collection("appConfig").doc("users").get();
+            users = doc.exists ? doc.data().list : ['Usuario 1', 'Usuario 2', 'Usuario 3'];
+            if (!doc.exists) await saveUsers(); // Guardar los default si no existen
+            populateUserSelect();
+        } catch (error) {
+            console.error("Error al cargar usuarios:", error);
+            users = ['Usuario 1', 'Usuario 2', 'Usuario 3']; // Fallback
+            populateUserSelect();
+        }
+    }
+
+    async function saveUsers() {
+        try {
+            await db.collection("appConfig").doc("users").set({ list: users });
+            console.log("Usuarios guardados en Firestore.");
+        } catch (error) {
+            console.error("Error al guardar usuarios:", error);
+        }
+    }
+
+    function populateUserSelect() {
+        userSelect.innerHTML = '';
+        users.forEach(user => {
+            const option = document.createElement('option');
+            option.value = user;
+            option.textContent = user;
+            userSelect.appendChild(option);
+        });
+
+        // Asegurarse de que el currentUser sigue siendo válido
+        if (!users.includes(currentUser)) {
+            currentUser = users[0] || '';
+        }
+        userSelect.value = currentUser;
+    }
+
+    function renderUserList() {
+        userList.innerHTML = '';
+        users.forEach((user, index) => {
+            const li = document.createElement('li');
+            const nameInput = document.createElement('input');
+            nameInput.type = 'text';
+            nameInput.value = user;
+            nameInput.dataset.index = index;
+            nameInput.addEventListener('change', (e) => users[index] = e.target.value.trim());
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = 'X'; deleteBtn.className = 'delete-user-btn'; deleteBtn.title = 'Eliminar usuario';
+            deleteBtn.addEventListener('click', () => { if (users.length > 1) { users.splice(index, 1); renderUserList(); } else { alert('No se puede eliminar el último usuario.'); } });
+            li.append(nameInput, deleteBtn); userList.appendChild(li);
+        });
+    }
+
     // --- INICIALIZACIÓN Y MANEJADORES DE EVENTOS ---
 
     // --- LÓGICA DE AUTENTICACIÓN ---
@@ -513,9 +578,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const docRef = db.collection("calendarData").doc(monthId);
 
                 // Usamos la notación de punto para actualizar un campo específico dentro de un mapa
-                const updateData = {}; // No usamos localUser.email aquí, sino el currentUser del dropdown
+                const updateData = {};
                 updateData[`${dateKey}.${field}`] = target.textContent;
-                updateData[`${dateKey}.editor`] = localUser.email;
+                updateData[`${dateKey}.editor`] = currentUser; // Usar el usuario del dropdown
 
                 // set con merge:true crea el documento si no existe o actualiza los campos si existe
                 docRef.set(updateData, { merge: true })
