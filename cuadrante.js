@@ -160,6 +160,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                 const monthId = `${year}-${month + 1}`;
                                 const docRef = db.collection("calendarData").doc(monthId);
                                 const updatedFiles = (dayData.files || []).filter(f => f.downloadURL !== fileData.downloadURL);
+                                
+                                // Usar update para eliminar el archivo del array
                                 await docRef.update({
                                     [`${dateKey}.files`]: updatedFiles
                                 });
@@ -208,17 +210,30 @@ document.addEventListener('DOMContentLoaded', function() {
                         const monthId = `${year}-${month + 1}`;
                         const docRef = db.collection("calendarData").doc(monthId);
                         
-                        // Usamos set con merge para crear el campo 'files' si no existe
-                        await docRef.set({
-                            [dateKey]: {
-                                files: firebase.firestore.FieldValue.arrayUnion(fileInfo)
-                            }
-                        }, { merge: true });
+                        // Usar update para añadir el nuevo archivo al array
+                        await docRef.update({
+                            [`${dateKey}.files`]: firebase.firestore.FieldValue.arrayUnion(fileInfo)
+                        });
 
                         console.log("Archivo subido y referencia guardada en Firestore.");
                     } catch (error) {
-                        console.error("Error al subir archivo:", error);
-                        alert("Error al subir el archivo. Consulta la consola para más detalles.");
+                        // Si el error es 'not-found', significa que el documento o el campo del día no existen.
+                        // En ese caso, usamos set con merge para crearlo.
+                        if (error.code === 'not-found') {
+                            const monthId = `${year}-${month + 1}`;
+                            const docRef = db.collection("calendarData").doc(monthId);
+                            const fileInfo = {
+                                name: file.name,
+                                downloadURL: (await storage.ref().child(`files/${dateKey}/${Date.now()}-${file.name}`).getDownloadURL()),
+                                uploadedBy: currentUser,
+                                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                            };
+                            await docRef.set({ [dateKey]: { files: [fileInfo] } }, { merge: true });
+                            console.log("Documento/Día creado y archivo subido.");
+                        } else {
+                            console.error("Error al subir archivo:", error);
+                            alert("Error al subir el archivo. Consulta la consola para más detalles.");
+                        }
                     }
                 };
 
